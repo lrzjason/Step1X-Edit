@@ -64,6 +64,15 @@ The script will generate a wheel name like `flash_attn-2.7.2.post1+cu12torch2.5c
 
 Then you can download the corresponding pre-built wheel and install it following the instructions in [`flash-attn`](https://github.com/Dao-AILab/flash-attention).
 
+Download Qwen/Qwen2.5-VL-7B-Instruct for text encoder
+```bash
+huggingface-cli download 'Qwen/Qwen2.5-VL-7B-Instruct' --local-dir models/qwenvl25_7b/
+```
+
+Download Step1X-Edit model
+```bash
+huggingface-cli download 'stepfun-ai/Step1X-Edit' --local-dir models/step1xedit/
+```
 
 ### 2.3 Inference Scripts
 After downloading the model weights, you can use the following scripts to edit images:

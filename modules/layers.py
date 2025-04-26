@@ -24,7 +24,7 @@ from functools import partial
 import torch
 import torch.nn.functional as F
 from einops import rearrange
-from liger_kernel.ops.rms_norm import LigerRMSNormFunction
+from modules.rms_norm import LigerRMSNormFunction
 from torch import Tensor, nn
 
 
@@ -366,7 +366,10 @@ def attention_after_rope(q, k, v, pe):
 
     from .attention import attention
 
-    x = attention(q, k, v, mode="flash")
+    # x = attention(q, k, v, mode="flash")
+    # x = attention(q, k, v, mode="torch")
+    x = attention(q, k, v, mode="vanilla")
+    
     return x
 
 
@@ -430,7 +433,6 @@ class ModulationOut:
     scale: Tensor
     gate: Tensor
 
-
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int):
         super().__init__()
@@ -453,8 +455,10 @@ class RMSNorm(torch.nn.Module):
         x = x.float()
         rrms = torch.rsqrt(torch.mean(x**2, dim=-1, keepdim=True) + eps)
         return (x * rrms).to(dtype=x_dtype) * weight
+    
 
     def forward(self, x: Tensor):
+        # return self.rms_norm(x, self.scale, 1e-6)
         return self.rms_norm_fast(x, self.scale, 1e-6)
 
 
@@ -529,22 +533,34 @@ class DoubleStreamBlock(nn.Module):
         img_mod1, img_mod2 = self.img_mod(vec)
         txt_mod1, txt_mod2 = self.txt_mod(vec)
 
+        print(f"img min/max: {img.min().item()}/{img.max().item()}")
         # prepare image for attention
         img_modulated = self.img_norm1(img)
+        
+        print(f"img_modulated min/max: {img_modulated.min().item()}/{img_modulated.max().item()}")
         img_modulated = (1 + img_mod1.scale) * img_modulated + img_mod1.shift
         img_qkv = self.img_attn.qkv(img_modulated)
+        
+        print(f"img_qkv min/max: {img_qkv.min().item()}/{img_qkv.max().item()}")
         img_q, img_k, img_v = rearrange(
             img_qkv, "B L (K H D) -> K B L H D", K=3, H=self.num_heads
         )
+        print(f"img_q min/max: {img_q.min().item()}/{img_q.max().item()}")
+        print(f"img_k min/max: {img_k.min().item()}/{img_k.max().item()}")
+        print(f"img_v min/max: {img_v.min().item()}/{img_v.max().item()}")
         img_q, img_k = self.img_attn.norm(img_q, img_k, img_v)
 
         # prepare txt for attention
         txt_modulated = self.txt_norm1(txt)
         txt_modulated = (1 + txt_mod1.scale) * txt_modulated + txt_mod1.shift
         txt_qkv = self.txt_attn.qkv(txt_modulated)
+        print(f"txt_qkv min/max: {txt_qkv.min().item()}/{txt_qkv.max().item()}")
         txt_q, txt_k, txt_v = rearrange(
             txt_qkv, "B L (K H D) -> K B L H D", K=3, H=self.num_heads
         )
+        print(f"txt_q min/max: {txt_q.min().item()}/{txt_q.max().item()}")
+        print(f"txt_k min/max: {txt_k.min().item()}/{txt_k.max().item()}")
+        print(f"txt_v min/max: {txt_v.min().item()}/{txt_v.max().item()}")
         txt_q, txt_k = self.txt_attn.norm(txt_q, txt_k, txt_v)
 
         # run actual attention
@@ -552,16 +568,22 @@ class DoubleStreamBlock(nn.Module):
         k = torch.cat((txt_k, img_k), dim=1)
         v = torch.cat((txt_v, img_v), dim=1)
 
+        print(f"q min/max: {q.min().item()}/{q.max().item()}")
+        print(f"k min/max: {k.min().item()}/{k.max().item()}")
+        print(f"v min/max: {v.min().item()}/{v.max().item()}")
         attn = attention_after_rope(q, k, v, pe=pe)
         txt_attn, img_attn = attn[:, : txt.shape[1]], attn[:, txt.shape[1] :]
 
         # calculate the img bloks
+        cond, uncond = torch.chunk(img, chunks=2, dim=0)
         img = img + img_mod1.gate * self.img_attn.proj(img_attn)
+        cond2, uncond2 = torch.chunk(img, chunks=2, dim=0)
         img_mlp = self.img_mlp(
             (1 + img_mod2.scale) * self.img_norm2(img) + img_mod2.shift
         )
         img = scale_add_residual(img_mlp, img_mod2.gate, img)
 
+        cond3, uncond3 = torch.chunk(img, chunks=2, dim=0)
         # calculate the txt bloks
         txt = txt + txt_mod1.gate * self.txt_attn.proj(txt_attn)
         txt_mlp = self.txt_mlp(
