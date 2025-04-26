@@ -207,6 +207,6 @@ class Step1XEdit(nn.Module):
 
         img = img[:, txt.shape[1] :, ...]
 
-        cond3, uncond3 = torch.chunk(img, chunks=2, dim=0)
+        # cond3, uncond3 = torch.chunk(img, chunks=2, dim=0)
         img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
         return img
