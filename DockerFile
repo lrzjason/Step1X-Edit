@@ -1,0 +1,8 @@
+FROM python:3.12
+
+WORKDIR /app
+
+COPY . /app
+
+RUN pip install -r requirements.txt -i https://mirrors.cloud.tencent.com/pypi/simple
+CMD python3 app.py

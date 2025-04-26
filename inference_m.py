@@ -453,6 +453,8 @@ def encode_prompt(llm_encoder,prompt,negative_prompt,image_path,device,size_leve
         ref_images_raw, img_info = input_process_image(ref_images, img_size=size_level)
         ref_images_raw = load_image(ref_images_raw)
         ref_images_raw = ref_images_raw.to(device)
+        ref_images_raw = torch.cat([ref_images_raw, ref_images_raw], dim=0)
+        
         txt, mask = llm_encoder([prompt,negative_prompt], ref_images_raw)
         llm_embedding = txt.to(device)
         embedding = {

@@ -97,6 +97,7 @@ if __name__ == "__main__":
 
         ref_images_raw = load_image(ref_images_raw)
         ref_images_raw = ref_images_raw.to(device)
+        ref_images_raw = torch.cat([ref_images_raw, ref_images_raw], dim=0)
         embedding = encode_prompt(qwen2vl_encoder, "remove the object from the image","",ref_images_raw, device,bs=1)
         
         # save embedding
