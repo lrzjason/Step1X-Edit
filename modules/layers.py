@@ -366,9 +366,9 @@ def attention_after_rope(q, k, v, pe):
 
     from .attention import attention
 
-    # x = attention(q, k, v, mode="flash")
+    x = attention(q, k, v, mode="flash")
     # x = attention(q, k, v, mode="torch")
-    x = attention(q, k, v, mode="vanilla")
+    # x = attention(q, k, v, mode="vanilla")
     
     return x
 

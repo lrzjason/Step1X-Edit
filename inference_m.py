@@ -19,7 +19,7 @@ import sampling
 from modules.autoencoder import AutoEncoder
 from modules.conditioner import Qwen25VL_7b_Embedder as Qwen2VLEmbedder
 from modules.model_edit import Step1XParams, Step1XEdit
-from optimum.quanto import freeze, qfloat8, quantize
+from optimum.quanto import freeze, qfloat8, quantize, qint4
 import gc
 
 def load_state_dict(model, ckpt_path, device="cuda", strict=False, assign=True):
@@ -225,16 +225,20 @@ class ImageGenerator:
                     ) / self.process_diff_norm(diff_norm, k=0.4)
                 else:
                     pred = uncond + cfg_guidance * (cond - uncond)
-            tem_img = img[0 : img.shape[0] // 2, :] + (t_prev - t_curr) * pred
-            img_input_length = img.shape[1] // 2
-            img = torch.cat(
-                [
-                tem_img[:, :img_input_length],
-                img[ : img.shape[0] // 2, img_input_length:],
-                ], dim=1
-            )
-
-        return img[:, :img.shape[1] // 2]
+                tem_img = img[0 : img.shape[0] // 2, :] + (t_prev - t_curr) * pred
+                img_input_length = img.shape[1] // 2
+                img = torch.cat(
+                    [
+                    tem_img[:, :img_input_length],
+                    img[ : img.shape[0] // 2, img_input_length:],
+                    ], dim=1
+                )
+            else:
+                img = img + (t_prev - t_curr) * pred
+                
+        if cfg_guidance != -1:
+            img = img[:, :img.shape[1] // 2]
+        return img
 
     @staticmethod
     def unpack(x: torch.Tensor, height: int, width: int) -> torch.Tensor:
@@ -466,6 +470,8 @@ def encode_prompt(llm_encoder,prompt,negative_prompt,image_path,device,size_leve
         torch.save(embedding, cache_embedding_path)
         
     return embedding
+
+@torch.no_grad()
 def main():
 
     parser = argparse.ArgumentParser()
@@ -479,12 +485,12 @@ def main():
     parser.add_argument('--size_level', default=512, type=int)
     args = parser.parse_args()
     args.model_path = "F:/Step1X-Edit/models"
-    args.input_dir = "F:/Step1X-Edit/examples"
+    args.input_dir = "F:/Step1X-Edit/test"
     # args.output_dir = "F:/Step1X-Edit/output_en"
     args.output_dir = "F:/Step1X-Edit/output_en"
-    args.json_path = "F:/Step1X-Edit/examples/prompt_en.json"
+    args.json_path = "F:/Step1X-Edit/test/prompt_cn.json"
     args.size_level = 512
-
+    args.cfg_guidance = 6
     assert os.path.exists(args.input_dir), f"Input directory {args.input_dir} does not exist."
     assert os.path.exists(args.json_path), f"JSON file {args.json_path} does not exist."
     os.makedirs(args.output_dir, exist_ok=True)
@@ -496,7 +502,7 @@ def main():
     max_length = 640
     dtype = torch.bfloat16
 
-    image_and_prompts = json.load(open(args.json_path, 'r'))
+    image_and_prompts = json.load(open(args.json_path, 'r', encoding='utf-8'))
 
     qwen2vl_encoder = None
     prepare_gen_arr = []
@@ -531,7 +537,8 @@ def main():
         max_length=640,
     )
     print('start optimized transformer')
-    quantize(image_edit.dit, weights=qfloat8) # 对模型进行量化
+    # quantize(image_edit.dit, weights=qfloat8) # 对模型进行量化
+    quantize(image_edit.dit, weights=qint4)
     freeze(image_edit.dit)
     print('end optimized transformer')
     
@@ -542,7 +549,7 @@ def main():
 
     for prepare_gen_config, (image_name, prompt) in zip(prepare_gen_arr, image_and_prompts.items()):
         image_path = os.path.join(args.input_dir, image_name)
-        output_path = os.path.join(args.output_dir, image_name)
+        output_path = os.path.join(args.output_dir, f"{args.size_level}_{image_name}")
         start_time = time.time()
         
         image = image_edit.generate_image(

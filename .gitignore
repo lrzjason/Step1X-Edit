@@ -6,3 +6,5 @@ __pycache__
 
 models/
 examples/*.pt
+output_en/
+test/

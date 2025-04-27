@@ -188,7 +188,7 @@ class ImageGenerator:
         mask=None,
         show_progress=False,
         timesteps_truncate=1.0,
-        blocks_to_swap=15
+        blocks_to_swap=20
     ):
         if show_progress:
             pbar = tqdm(itertools.pairwise(timesteps), desc='denoising...')
@@ -209,6 +209,9 @@ class ImageGenerator:
             
             self.dit.move_to_device_except_swap_blocks(img.device)  # reduce peak memory usage
             self.dit.prepare_block_swap_before_forward()
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             pred = self.dit(
                 img=img,
                 img_ids=img_ids,
@@ -311,7 +314,7 @@ class ImageGenerator:
         size_level=512,
         mask=None,
         llm_embedding=None,
-        blocks_to_swap=15
+        blocks_to_swap=20
     ):
         
         assert num_samples == 1, "num_samples > 1 is not supported yet."
@@ -474,6 +477,8 @@ def encode_prompt(llm_encoder,prompt,negative_prompt,image_path,device,size_leve
         torch.save(embedding, cache_embedding_path)
         
     return embedding
+
+@torch.no_grad()
 def main():
 
     parser = argparse.ArgumentParser()
@@ -491,7 +496,7 @@ def main():
     # args.output_dir = "F:/Step1X-Edit/output_en"
     args.output_dir = "F:/Step1X-Edit/output_en"
     args.json_path = "F:/Step1X-Edit/examples/prompt_en.json"
-    args.size_level = 512
+    args.size_level = 768
 
     assert os.path.exists(args.input_dir), f"Input directory {args.input_dir} does not exist."
     assert os.path.exists(args.json_path), f"JSON file {args.json_path} does not exist."
@@ -538,10 +543,10 @@ def main():
         # qwen2vl_model_path='Qwen/Qwen2.5-VL-7B-Instruct',
         max_length=640,
     )
-    # print('start optimized transformer')
-    # quantize(image_edit.dit, weights=qfloat8) # 对模型进行量化
-    # freeze(image_edit.dit)
-    # print('end optimized transformer')
+    print('start optimized transformer')
+    quantize(image_edit.dit, weights=qfloat8) # 对模型进行量化
+    freeze(image_edit.dit)
+    print('end optimized transformer')
     
     # Force garbage collection
     gc.collect()
